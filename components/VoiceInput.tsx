@@ -52,7 +52,8 @@ export default function VoiceInput({ room, aiModel, knowledge, onAddTasks }: Voi
       }
     } catch (err) {
       console.error('AI処理エラー:', err);
-      showToast('エラーが発生しました');
+      const msg = err instanceof Error ? err.message : String(err);
+      showToast(`エラー: ${msg.slice(0, 80)}`);
     }
     setLoading(false);
     setDisplayText('');

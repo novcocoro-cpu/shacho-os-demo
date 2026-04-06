@@ -15,6 +15,16 @@ function buildKnowledgeContext(knowledge?: Knowledge, roomId?: string): string {
   return parts.length > 0 ? '\n\n【会社ナレッジ】\n' + parts.join('\n') : '';
 }
 
+// ── JSONを安全に抽出 ────────────────────────────────────────────────────────
+function extractJSON(raw: string): string {
+  // マークダウンのコードブロックを除去
+  let text = raw.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+  // JSON配列の部分だけ抽出
+  const match = text.match(/\[[\s\S]*\]/);
+  if (match) return match[0];
+  return text;
+}
+
 // ── Claude API ──────────────────────────────────────────────────────────────
 async function callClaude(system: string, userContent: string, maxTokens: number): Promise<string> {
   const resp = await fetch('https://api.anthropic.com/v1/messages', {
@@ -39,40 +49,58 @@ async function callClaude(system: string, userContent: string, maxTokens: number
 // ── Gemini API ──────────────────────────────────────────────────────────────
 async function callGemini(system: string, userContent: string): Promise<string> {
   const apiKey = (process.env.NEXT_PUBLIC_GEMINI_API_KEY ?? '').trim();
-  const resp = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        system_instruction: { parts: [{ text: system }] },
-        contents: [{ parts: [{ text: userContent }] }],
-      }),
-    }
-  );
+  if (!apiKey) {
+    console.error('NEXT_PUBLIC_GEMINI_API_KEY が設定されていません');
+    throw new Error('Gemini APIキーが未設定です');
+  }
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+  console.log('Gemini API URL:', url.replace(apiKey, apiKey.slice(0, 8) + '...'));
+  const resp = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      system_instruction: { parts: [{ text: system }] },
+      contents: [{ parts: [{ text: userContent }] }],
+    }),
+  });
+  if (!resp.ok) {
+    const errorText = await resp.text();
+    console.error('Gemini APIエラー:', resp.status, errorText);
+    throw new Error(`Gemini API ${resp.status}: ${errorText.slice(0, 200)}`);
+  }
   const data = await resp.json();
-  return data.candidates?.[0]?.content?.parts?.[0]?.text || '[]';
+  console.log('Gemini レスポンス:', JSON.stringify(data).slice(0, 500));
+  const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+  if (!text) {
+    console.error('Gemini レスポンスにテキストなし:', JSON.stringify(data).slice(0, 500));
+    return '[]';
+  }
+  return text;
 }
 
 // ── Gemini Vision API（画像読み取り）─────────────────────────────────────────
 async function callGeminiVision(system: string, base64Data: string, mimeType: string): Promise<string> {
   const apiKey = (process.env.NEXT_PUBLIC_GEMINI_API_KEY ?? '').trim();
-  const resp = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        system_instruction: { parts: [{ text: system }] },
-        contents: [{
-          parts: [
-            { text: '添付された画像・ドキュメントの内容を読み取って処理してください。' },
-            { inline_data: { mime_type: mimeType, data: base64Data } },
-          ],
-        }],
-      }),
-    }
-  );
+  if (!apiKey) throw new Error('Gemini APIキーが未設定です');
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+  const resp = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      system_instruction: { parts: [{ text: system }] },
+      contents: [{
+        parts: [
+          { text: '添付された画像・ドキュメントの内容を読み取って処理してください。' },
+          { inline_data: { mime_type: mimeType, data: base64Data } },
+        ],
+      }],
+    }),
+  });
+  if (!resp.ok) {
+    const errorText = await resp.text();
+    console.error('Gemini Vision APIエラー:', resp.status, errorText);
+    throw new Error(`Gemini Vision API ${resp.status}`);
+  }
   const data = await resp.json();
   return data.candidates?.[0]?.content?.parts?.[0]?.text || '[]';
 }
@@ -142,8 +170,9 @@ export async function generateSteps(model: AIModel, roomLabel: string, taskText:
   const system = `タスクの実行工程を3〜5ステップで返してください。JSON配列のみ（マークダウン不要）。
 ["工程1の内容","工程2の内容","工程3の内容"]
 各工程は20文字以内の具体的アクション。動詞で終わる。順番通りに並べる。${ctx}`;
-  const text = await callAI(model, system, `カテゴリ：${roomLabel}\nタスク：${taskText}`, 400);
-  const arr = JSON.parse(text.replace(/```json|```/g, '').trim());
+  const raw = await callAI(model, system, `カテゴリ：${roomLabel}\nタスク：${taskText}`, 400);
+  const text = extractJSON(raw);
+  const arr = JSON.parse(text);
   return arr.map((t: string) => ({ text: t, done: false }));
 }
 
@@ -155,8 +184,12 @@ export async function extractTasksFromMemo(model: AIModel, roomLabel: string, me
 最低1件は必ず返す。本当に何もなければ「内容を確認する」をタスクにする。
 JSON配列のみ返す（マークダウン不要）：
 [{"text":"タスク内容","priority":"URGENT|HIGH|MED|LOW","deadline":"今日|今週|今月|今年"}]${ctx}`;
-  const text = await callAI(model, system, `カテゴリ：${roomLabel}\nメモ：\n${memo}`, 600);
-  return JSON.parse(text.replace(/```json|```/g, '').trim());
+  console.log('extractTasksFromMemo 呼び出し:', { model, roomLabel, memoLength: memo.length, memo: memo.slice(0, 100) });
+  const raw = await callAI(model, system, `カテゴリ：${roomLabel}\n発言内容：\n${memo}`, 600);
+  console.log('AI生レスポンス:', raw.slice(0, 300));
+  const text = extractJSON(raw);
+  console.log('JSON抽出結果:', text.slice(0, 300));
+  return JSON.parse(text);
 }
 
 export async function extractTasksFromImage(roomLabel: string, base64Data: string, mimeType: string, knowledge?: Knowledge, roomId?: string): Promise<Task[]> {
@@ -167,8 +200,9 @@ export async function extractTasksFromImage(roomLabel: string, base64Data: strin
 画像にテキストが含まれていない場合や、タスク化できる内容がない場合は空配列[]を返す。
 JSON配列のみ返す（マークダウン不要）：
 [{"text":"タスク内容","priority":"URGENT|HIGH|MED|LOW","deadline":"今日|今週|今月|今年"}]${ctx}`;
-  const text = await callGeminiVision(system, base64Data, mimeType);
-  return JSON.parse(text.replace(/```json|```/g, '').trim());
+  const raw = await callGeminiVision(system, base64Data, mimeType);
+  const text = extractJSON(raw);
+  return JSON.parse(text);
 }
 
 export async function readImageContent(base64Data: string, mimeType: string): Promise<string> {
