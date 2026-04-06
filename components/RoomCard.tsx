@@ -5,6 +5,7 @@ import { HORIZON_FILTER } from '@/lib/constants';
 import TaskItem from './TaskItem';
 import MemoPanel from './MemoPanel';
 import FileUpload from './FileUpload';
+import VoiceInput from './VoiceInput';
 
 interface RoomCardProps {
   room: RoomDef;
@@ -67,13 +68,20 @@ export default function RoomCard({
             </div>
           )}
         </div>
-        <div style={{ textAlign: 'right' }}>
-          <div style={{
-            fontSize: 17, fontWeight: 700, color: room.color, fontFamily: 'monospace',
-          }}>
-            {totalPct}<span style={{ fontSize: 9 }}>%</span>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+          <VoiceInput
+            room={room}
+            aiModel={aiModel}
+            onAddTasks={(newTasks) => onAddTasks(room.id, newTasks)}
+          />
+          <div style={{ textAlign: 'right' }}>
+            <div style={{
+              fontSize: 17, fontWeight: 700, color: room.color, fontFamily: 'monospace',
+            }}>
+              {totalPct}<span style={{ fontSize: 9 }}>%</span>
+            </div>
+            <div style={{ fontSize: 9, color: '#444' }}>{totalDone}/{tasks.length}</div>
           </div>
-          <div style={{ fontSize: 9, color: '#444' }}>{totalDone}/{tasks.length}</div>
         </div>
       </div>
 
