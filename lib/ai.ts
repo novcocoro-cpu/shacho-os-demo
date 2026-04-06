@@ -132,18 +132,22 @@ export async function generateSteps(model: AIModel, roomLabel: string, taskText:
 }
 
 export async function extractTasksFromMemo(model: AIModel, roomLabel: string, memo: string): Promise<Task[]> {
-  const system = `メモからタスクを抽出してJSON配列のみ返してください（マークダウン不要）。
-[{"text":"タスク内容","priority":"URGENT|HIGH|MED|LOW","deadline":"今日|今週|今月|今年"}]
-アクション動詞を含むものだけタスクにする。メモ・感想・背景情報はタスクにしない。`;
+  const system = `話された内容からやるべきことを何でも抽出してください。
+完全な文章でなくても、単語・断片的な内容でもタスクにする。
+「〜したい」「〜が気になる」「〜しないと」も全部タスクにする。
+JSON配列のみ返す（マークダウン不要）：
+[{"text":"タスク内容","priority":"URGENT|HIGH|MED|LOW","deadline":"今日|今週|今月|今年"}]`;
   const text = await callAI(model, system, `カテゴリ：${roomLabel}\nメモ：\n${memo}`, 600);
   return JSON.parse(text.replace(/```json|```/g, '').trim());
 }
 
 export async function extractTasksFromImage(roomLabel: string, base64Data: string, mimeType: string): Promise<Task[]> {
-  const system = `画像の内容を読み取り、タスクを抽出してJSON配列のみ返してください（マークダウン不要）。
-[{"text":"タスク内容","priority":"URGENT|HIGH|MED|LOW","deadline":"今日|今週|今月|今年"}]
-アクション動詞を含むものだけタスクにする。メモ・感想・背景情報はタスクにしない。
-画像にテキストが含まれていない場合や、タスク化できる内容がない場合は空配列[]を返す。`;
+  const system = `画像の内容を読み取り、やるべきことを何でも抽出してください。
+完全な文章でなくても、単語・断片的な内容でもタスクにする。
+「〜したい」「〜が気になる」「〜しないと」も全部タスクにする。
+画像にテキストが含まれていない場合や、タスク化できる内容がない場合は空配列[]を返す。
+JSON配列のみ返す（マークダウン不要）：
+[{"text":"タスク内容","priority":"URGENT|HIGH|MED|LOW","deadline":"今日|今週|今月|今年"}]`;
   const text = await callGeminiVision(system, base64Data, mimeType);
   return JSON.parse(text.replace(/```json|```/g, '').trim());
 }

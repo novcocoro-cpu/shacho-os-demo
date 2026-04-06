@@ -5,7 +5,7 @@ import { RoomDef, Task, AIModel } from '@/lib/types';
 import { extractTasksFromMemo } from '@/lib/ai';
 
 const MAX_RECORD_SEC = 60;
-const SILENCE_TIMEOUT_MS = 3000;
+const SILENCE_TIMEOUT_MS = 10000;
 
 interface MemoPanelProps {
   room: RoomDef;
@@ -70,22 +70,37 @@ export default function MemoPanel({ room, memo, aiModel, onSave, onAddTasks }: M
     const r = new SR();
     r.lang = 'ja-JP';
     r.continuous = true;
-    r.interimResults = false;
+    r.interimResults = true;
     lastTranscript.current = '';
 
     r.onresult = (e: SpeechRecognitionEvent) => {
       resetSilenceTimer();
-      const latest = Array.from(e.results)
-        .filter(res => res.isFinal)
-        .map(res => res[0].transcript)
-        .join('');
-      if (!latest.trim()) return;
-      // Deduplicate: skip if same as last transcript
-      if (latest.trim() === lastTranscript.current.trim()) return;
-      lastTranscript.current = latest;
+      let finalText = '';
+      for (let i = 0; i < e.results.length; i++) {
+        if (e.results[i].isFinal) {
+          finalText += e.results[i][0].transcript;
+        }
+      }
+      if (!finalText.trim()) return;
+      // 3回連続重複除去
+      const lines = finalText.split(/(?<=。|、|\n)/);
+      const deduped: string[] = [];
+      let repeatCount = 0;
+      for (const line of lines) {
+        if (deduped.length > 0 && line.trim() === deduped[deduped.length - 1].trim()) {
+          repeatCount++;
+          if (repeatCount < 3) deduped.push(line);
+        } else {
+          repeatCount = 0;
+          deduped.push(line);
+        }
+      }
+      const cleaned = deduped.join('');
+      if (cleaned.trim() === lastTranscript.current.trim()) return;
+      lastTranscript.current = cleaned;
       setDraft(prev => {
         const base = prev.trimEnd();
-        return base ? base + '\n' + latest : latest;
+        return base ? base + '\n' + cleaned : cleaned;
       });
     };
 

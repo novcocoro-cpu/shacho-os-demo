@@ -5,7 +5,23 @@ import { RoomDef, Task, AIModel } from '@/lib/types';
 import { extractTasksFromMemo } from '@/lib/ai';
 
 const MAX_RECORD_SEC = 60;
-const SILENCE_TIMEOUT_MS = 3000;
+const SILENCE_TIMEOUT_MS = 10000;
+
+function deduplicateText(text: string): string {
+  const lines = text.split('\n').filter(Boolean);
+  const result: string[] = [];
+  let repeatCount = 0;
+  for (const line of lines) {
+    if (result.length > 0 && line.trim() === result[result.length - 1].trim()) {
+      repeatCount++;
+      if (repeatCount < 3) result.push(line);
+    } else {
+      repeatCount = 0;
+      result.push(line);
+    }
+  }
+  return result.join('\n');
+}
 
 interface VoiceInputProps {
   room: RoomDef;
@@ -18,11 +34,11 @@ export default function VoiceInput({ room, aiModel, onAddTasks }: VoiceInputProp
   const [loading, setLoading] = useState(false);
   const [remainSec, setRemainSec] = useState(MAX_RECORD_SEC);
   const [toast, setToast] = useState('');
+  const [interim, setInterim] = useState('');
   const recRef = useRef<SpeechRecognition | null>(null);
   const silenceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const maxTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const lastTranscript = useRef('');
   const collectedText = useRef('');
 
   const showToast = (msg: string) => {
@@ -35,13 +51,15 @@ export default function VoiceInput({ room, aiModel, onAddTasks }: VoiceInputProp
     if (maxTimer.current) { clearTimeout(maxTimer.current); maxTimer.current = null; }
     if (countdownRef.current) { clearInterval(countdownRef.current); countdownRef.current = null; }
     setRemainSec(MAX_RECORD_SEC);
+    setInterim('');
   }, []);
 
   const processText = useCallback(async (text: string) => {
-    if (!text.trim()) return;
+    const cleaned = deduplicateText(text);
+    if (!cleaned.trim()) return;
     setLoading(true);
     try {
-      const tasks = await extractTasksFromMemo(aiModel, room.label, text);
+      const tasks = await extractTasksFromMemo(aiModel, room.label, cleaned);
       if (tasks.length > 0) {
         onAddTasks(tasks);
         showToast(`✓ タスクを${tasks.length}件追加しました`);
@@ -54,27 +72,20 @@ export default function VoiceInput({ room, aiModel, onAddTasks }: VoiceInputProp
     setLoading(false);
   }, [aiModel, room.label, onAddTasks]);
 
-  const stopVoice = useCallback(() => {
+  const finishRecording = useCallback(() => {
     recRef.current?.stop();
     setListening(false);
     cleanup();
-    // Process collected text
     if (collectedText.current.trim()) {
       processText(collectedText.current);
+      collectedText.current = '';
     }
   }, [cleanup, processText]);
 
   const resetSilenceTimer = useCallback(() => {
     if (silenceTimer.current) clearTimeout(silenceTimer.current);
-    silenceTimer.current = setTimeout(() => {
-      recRef.current?.stop();
-      setListening(false);
-      cleanup();
-      if (collectedText.current.trim()) {
-        processText(collectedText.current);
-      }
-    }, SILENCE_TIMEOUT_MS);
-  }, [cleanup, processText]);
+    silenceTimer.current = setTimeout(finishRecording, SILENCE_TIMEOUT_MS);
+  }, [finishRecording]);
 
   const startVoice = () => {
     if (listening || loading) return;
@@ -84,20 +95,25 @@ export default function VoiceInput({ room, aiModel, onAddTasks }: VoiceInputProp
     const r = new SR();
     r.lang = 'ja-JP';
     r.continuous = true;
-    r.interimResults = false;
-    lastTranscript.current = '';
+    r.interimResults = true;
     collectedText.current = '';
 
     r.onresult = (e: SpeechRecognitionEvent) => {
       resetSilenceTimer();
-      const latest = Array.from(e.results)
-        .filter(res => res.isFinal)
-        .map(res => res[0].transcript)
-        .join('');
-      if (!latest.trim()) return;
-      if (latest.trim() === lastTranscript.current.trim()) return;
-      lastTranscript.current = latest;
-      collectedText.current += (collectedText.current ? '\n' : '') + latest;
+      let finalText = '';
+      let interimText = '';
+      for (let i = 0; i < e.results.length; i++) {
+        const result = e.results[i];
+        if (result.isFinal) {
+          finalText += result[0].transcript;
+        } else {
+          interimText += result[0].transcript;
+        }
+      }
+      if (finalText) {
+        collectedText.current = finalText;
+      }
+      setInterim(interimText);
     };
 
     r.onend = () => {
@@ -112,7 +128,6 @@ export default function VoiceInput({ room, aiModel, onAddTasks }: VoiceInputProp
     r.start();
     recRef.current = r;
     setListening(true);
-    collectedText.current = '';
 
     resetSilenceTimer();
 
@@ -122,15 +137,7 @@ export default function VoiceInput({ room, aiModel, onAddTasks }: VoiceInputProp
       const elapsed = Math.floor((Date.now() - startTime) / 1000);
       setRemainSec(Math.max(0, MAX_RECORD_SEC - elapsed));
     }, 1000);
-    maxTimer.current = setTimeout(() => {
-      recRef.current?.stop();
-      setListening(false);
-      cleanup();
-      if (collectedText.current.trim()) {
-        processText(collectedText.current);
-        collectedText.current = '';
-      }
-    }, MAX_RECORD_SEC * 1000);
+    maxTimer.current = setTimeout(finishRecording, MAX_RECORD_SEC * 1000);
   };
 
   useEffect(() => {
@@ -171,22 +178,33 @@ export default function VoiceInput({ room, aiModel, onAddTasks }: VoiceInputProp
       )}
 
       {listening && (
-        <button onClick={stopVoice} style={{
-          padding: '3px 8px', fontSize: 9,
-          border: '1px solid rgba(224,123,106,0.5)',
-          background: 'rgba(224,123,106,0.12)',
-          color: '#E07B6A',
-          cursor: 'pointer', fontFamily: 'monospace',
-          display: 'flex', alignItems: 'center', gap: 4,
-          animation: 'fadeIn 0.2s ease',
-        }}>
-          <span style={{
-            width: 6, height: 6, borderRadius: '50%',
-            background: '#E07B6A', animation: 'blink 0.8s infinite',
-            display: 'inline-block',
-          }} />
-          {remainSec}秒 ■停止
-        </button>
+        <div>
+          <button onClick={finishRecording} style={{
+            padding: '3px 8px', fontSize: 9,
+            border: '1px solid rgba(224,123,106,0.5)',
+            background: 'rgba(224,123,106,0.12)',
+            color: '#E07B6A',
+            cursor: 'pointer', fontFamily: 'monospace',
+            display: 'flex', alignItems: 'center', gap: 4,
+            animation: 'fadeIn 0.2s ease',
+          }}>
+            <span style={{
+              width: 6, height: 6, borderRadius: '50%',
+              background: '#E07B6A', animation: 'blink 0.8s infinite',
+              display: 'inline-block',
+            }} />
+            {remainSec}秒 ■停止
+          </button>
+          {interim && (
+            <div style={{
+              fontSize: 9, color: '#666', fontFamily: 'monospace',
+              marginTop: 3, fontStyle: 'italic',
+              maxHeight: 32, overflow: 'hidden',
+            }}>
+              {interim}
+            </div>
+          )}
+        </div>
       )}
 
       {loading && (
