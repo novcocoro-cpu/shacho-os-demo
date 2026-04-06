@@ -1,6 +1,6 @@
 'use client';
 
-import { Task, Step, Horizon, RoomData, AIModel } from '@/lib/types';
+import { Task, Step, Horizon, RoomData, AIModel, Knowledge } from '@/lib/types';
 import { ROOMS, HORIZONS, HORIZON_FILTER } from '@/lib/constants';
 import RoomCard from '@/components/RoomCard';
 
@@ -14,6 +14,7 @@ interface DashboardProps {
   highlight: string | null;
   insight: string;
   aiModel: AIModel;
+  knowledge: Knowledge;
   onToggle: (key: string) => void;
   onDelete: (roomId: string, origIdx: number) => void;
   onSetSteps: (key: string, steps: Step[]) => void;
@@ -23,7 +24,7 @@ interface DashboardProps {
 }
 
 export default function Dashboard({
-  horizon, setHorizon, rooms, checked, steps, newKeys, highlight, insight, aiModel,
+  horizon, setHorizon, rooms, checked, steps, newKeys, highlight, insight, aiModel, knowledge,
   onToggle, onDelete, onSetSteps, onSaveMemo, onAppendMemo, onAddTasks,
 }: DashboardProps) {
   const filterTasks = (tasks: Task[]) =>
@@ -128,6 +129,7 @@ export default function Dashboard({
             steps={steps}
             newKeys={newKeys}
             aiModel={aiModel}
+            knowledge={knowledge}
             onToggle={onToggle}
             onDelete={onDelete}
             onSetSteps={onSetSteps}

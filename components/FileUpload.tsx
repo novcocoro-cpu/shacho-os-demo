@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef } from 'react';
-import { RoomDef, Task, AIModel } from '@/lib/types';
+import { RoomDef, Task, AIModel, Knowledge } from '@/lib/types';
 import {
   extractTextFromFile, fileToBase64, isImageFile,
   extractTasksFromMemo, extractTasksFromImage, readImageContent,
@@ -12,11 +12,12 @@ const ACCEPT = '.pdf,.jpg,.jpeg,.png,.txt,.docx';
 interface FileUploadProps {
   room: RoomDef;
   aiModel: AIModel;
+  knowledge: Knowledge;
   onAddTasks: (tasks: Task[]) => void;
   onAppendMemo: (text: string) => void;
 }
 
-export default function FileUpload({ room, aiModel, onAddTasks, onAppendMemo }: FileUploadProps) {
+export default function FileUpload({ room, aiModel, knowledge, onAddTasks, onAppendMemo }: FileUploadProps) {
   const [loading, setLoading] = useState(false);
   const [fileName, setFileName] = useState<string | null>(null);
   const [toast, setToast] = useState('');
@@ -47,7 +48,7 @@ export default function FileUpload({ room, aiModel, onAddTasks, onAppendMemo }: 
         }
 
         // タスク抽出
-        const tasks = await extractTasksFromImage(room.label, base64, mimeType);
+        const tasks = await extractTasksFromImage(room.label, base64, mimeType, knowledge, room.id);
         if (tasks.length > 0) {
           onAddTasks(tasks);
           showToast(`✓ ファイルを読み込み、${tasks.length}件のタスクを追加しました`);
@@ -67,7 +68,7 @@ export default function FileUpload({ room, aiModel, onAddTasks, onAppendMemo }: 
         onAppendMemo(text.trim());
 
         // AIでタスク抽出
-        const tasks = await extractTasksFromMemo(aiModel, room.label, text);
+        const tasks = await extractTasksFromMemo(aiModel, room.label, text, knowledge, room.id);
         if (tasks.length > 0) {
           onAddTasks(tasks);
           showToast(`✓ ファイルを読み込み、${tasks.length}件のタスクを追加しました`);

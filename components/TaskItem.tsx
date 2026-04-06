@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { RoomDef, Task, Step, AIModel } from '@/lib/types';
+import { RoomDef, Task, Step, AIModel, Knowledge } from '@/lib/types';
 import { PRI_COLOR, PRI_BG, PRI_JP } from '@/lib/constants';
 import { generateSteps } from '@/lib/ai';
 
@@ -12,6 +12,7 @@ interface TaskItemProps {
   done: boolean;
   isNew: boolean;
   aiModel: AIModel;
+  knowledge: Knowledge;
   onToggle: () => void;
   onDelete: () => void;
   steps: Step[] | null;
@@ -42,7 +43,7 @@ function DeadlinePill({ d }: { d: string }) {
 }
 
 export default function TaskItem({
-  room, task, taskKey, done, isNew, aiModel, onToggle, onDelete, steps, onSetSteps,
+  room, task, taskKey, done, isNew, aiModel, knowledge, onToggle, onDelete, steps, onSetSteps,
 }: TaskItemProps) {
   const [expanded, setExpanded] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -57,7 +58,7 @@ export default function TaskItem({
     if (!next || (steps && steps.length > 0)) return;
     setLoading(true);
     try {
-      const result = await generateSteps(aiModel, room.label, task.text);
+      const result = await generateSteps(aiModel, room.label, task.text, knowledge, room.id);
       onSetSteps(result);
     } catch {
       onSetSteps([{ text: '工程の取得に失敗しました', done: false }]);

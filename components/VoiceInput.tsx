@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { RoomDef, Task, AIModel } from '@/lib/types';
+import { RoomDef, Task, AIModel, Knowledge } from '@/lib/types';
 import { extractTasksFromMemo } from '@/lib/ai';
 
 const MAX_RECORD_SEC = 60;
@@ -26,10 +26,11 @@ function deduplicateText(text: string): string {
 interface VoiceInputProps {
   room: RoomDef;
   aiModel: AIModel;
+  knowledge: Knowledge;
   onAddTasks: (tasks: Task[]) => void;
 }
 
-export default function VoiceInput({ room, aiModel, onAddTasks }: VoiceInputProps) {
+export default function VoiceInput({ room, aiModel, knowledge, onAddTasks }: VoiceInputProps) {
   const [listening, setListening] = useState(false);
   const [loading, setLoading] = useState(false);
   const [remainSec, setRemainSec] = useState(MAX_RECORD_SEC);
@@ -59,7 +60,7 @@ export default function VoiceInput({ room, aiModel, onAddTasks }: VoiceInputProp
     if (!cleaned.trim()) return;
     setLoading(true);
     try {
-      const tasks = await extractTasksFromMemo(aiModel, room.label, cleaned);
+      const tasks = await extractTasksFromMemo(aiModel, room.label, cleaned, knowledge, room.id);
       if (tasks.length > 0) {
         onAddTasks(tasks);
         showToast(`✓ タスクを${tasks.length}件追加しました`);

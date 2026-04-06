@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { RoomDef, Task, AIModel } from '@/lib/types';
+import { RoomDef, Task, AIModel, Knowledge } from '@/lib/types';
 import { extractTasksFromMemo } from '@/lib/ai';
 
 const MAX_RECORD_SEC = 60;
@@ -11,11 +11,12 @@ interface MemoPanelProps {
   room: RoomDef;
   memo: string;
   aiModel: AIModel;
+  knowledge: Knowledge;
   onSave: (text: string) => void;
   onAddTasks: (tasks: Task[]) => void;
 }
 
-export default function MemoPanel({ room, memo, aiModel, onSave, onAddTasks }: MemoPanelProps) {
+export default function MemoPanel({ room, memo, aiModel, knowledge, onSave, onAddTasks }: MemoPanelProps) {
   const [open, setOpen] = useState(false);
   const [editing, setEdit] = useState(false);
   const [draft, setDraft] = useState(memo);
@@ -136,7 +137,7 @@ export default function MemoPanel({ room, memo, aiModel, onSave, onAddTasks }: M
     if (!draft.trim()) return;
     setAiLoad(true);
     try {
-      const tasks = await extractTasksFromMemo(aiModel, room.label, draft);
+      const tasks = await extractTasksFromMemo(aiModel, room.label, draft, knowledge, room.id);
       if (tasks.length) {
         onAddTasks(tasks);
         showToast(`✓ タスクを${tasks.length}件追加しました`);

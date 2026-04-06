@@ -1,4 +1,4 @@
-import { RoomDef, Horizon, Deadline, RoomData } from './types';
+import { RoomDef, Horizon, Deadline, RoomData, Knowledge } from './types';
 
 export const ROOMS: RoomDef[] = [
   { id: 'dev',      label: '開発・プロダクト', icon: '◈', color: '#C8963C', rgb: '200,150,60'  },
@@ -37,6 +37,15 @@ export const PRI_JP: Record<string, string> = {
   HIGH:   '高',
   MED:    '中',
   LOW:    '低',
+};
+
+export const DEFAULT_KNOWLEDGE: Knowledge = {
+  company: '',
+  vision: '',
+  priority: '',
+  partners: '',
+  aiPrompt: '',
+  roomPolicies: { dev: '', sales: '', strategy: '', finance: '', ideas: '', org: '' },
 };
 
 export const PRESET: Record<string, RoomData> = {

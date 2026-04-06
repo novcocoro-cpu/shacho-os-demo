@@ -1,8 +1,8 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Page, Horizon, Task, Step, RoomData, AIModel } from '@/lib/types';
-import { ROOMS, HORIZON_FILTER, PRESET, AI_NEW_TASKS, DEMO_VOICE } from '@/lib/constants';
+import { Page, Horizon, Task, Step, RoomData, AIModel, Knowledge } from '@/lib/types';
+import { ROOMS, HORIZON_FILTER, PRESET, AI_NEW_TASKS, DEMO_VOICE, DEFAULT_KNOWLEDGE } from '@/lib/constants';
 import NavBar from '@/components/NavBar';
 import DemoBar from '@/components/DemoBar';
 import Dashboard from '@/components/pages/Dashboard';
@@ -18,6 +18,12 @@ export default function Home() {
   const [newKeys, setNewKeys] = useState<string[]>([]);
   const [highlight, setHighlight] = useState<string | null>(null);
   const [aiModel, setAiModel] = useState<AIModel>('gemini');
+  const [knowledge, setKnowledge] = useState<Knowledge>(() => {
+    if (typeof window === 'undefined') return DEFAULT_KNOWLEDGE;
+    try { const s = localStorage.getItem('shacho-os-knowledge'); if (s) return { ...DEFAULT_KNOWLEDGE, ...JSON.parse(s) }; } catch {}
+    return DEFAULT_KNOWLEDGE;
+  });
+  const saveKnowledge = (k: Knowledge) => { setKnowledge(k); try { localStorage.setItem('shacho-os-knowledge', JSON.stringify(k)); } catch {} };
   const [insight, setInsight] = useState<string>(
     'KGホームデモと社労士報告—今日の2大タスク。午前中に田中さんへ連絡を済ませ、午後でデモ日程を確定する順番を推奨します。'
   );
@@ -171,6 +177,7 @@ export default function Home() {
             highlight={highlight}
             insight={insight}
             aiModel={aiModel}
+            knowledge={knowledge}
             onToggle={toggle}
             onDelete={deleteTask}
             onSetSteps={setTaskSteps}
@@ -188,7 +195,7 @@ export default function Home() {
           />
         )}
         {page === 'knowledge' && (
-          <KnowledgePage aiModel={aiModel} onSetAiModel={setAiModel} />
+          <KnowledgePage aiModel={aiModel} onSetAiModel={setAiModel} knowledge={knowledge} onSaveKnowledge={saveKnowledge} />
         )}
       </div>
     </div>

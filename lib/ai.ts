@@ -1,4 +1,19 @@
-import { Step, Task, AIModel } from './types';
+import { Step, Task, AIModel, Knowledge } from './types';
+
+// ── ナレッジコンテキスト生成 ─────────────────────────────────────────────────
+function buildKnowledgeContext(knowledge?: Knowledge, roomId?: string): string {
+  if (!knowledge) return '';
+  const parts: string[] = [];
+  if (knowledge.company) parts.push(`会社概要：${knowledge.company}`);
+  if (knowledge.vision) parts.push(`ビジョン：${knowledge.vision}`);
+  if (knowledge.priority) parts.push(`今月の最優先方針：${knowledge.priority}`);
+  if (knowledge.partners) parts.push(`パートナー：${knowledge.partners}`);
+  if (knowledge.aiPrompt) parts.push(`AI役割設定：${knowledge.aiPrompt}`);
+  if (roomId && knowledge.roomPolicies[roomId]) {
+    parts.push(`この分野の判断方針：${knowledge.roomPolicies[roomId]}`);
+  }
+  return parts.length > 0 ? '\n\n【会社ナレッジ】\n' + parts.join('\n') : '';
+}
 
 // ── Claude API ──────────────────────────────────────────────────────────────
 async function callClaude(system: string, userContent: string, maxTokens: number): Promise<string> {
@@ -122,32 +137,35 @@ export function isImageFile(file: File): boolean {
 
 // ── 公開関数 ────────────────────────────────────────────────────────────────
 
-export async function generateSteps(model: AIModel, roomLabel: string, taskText: string): Promise<Step[]> {
+export async function generateSteps(model: AIModel, roomLabel: string, taskText: string, knowledge?: Knowledge, roomId?: string): Promise<Step[]> {
+  const ctx = buildKnowledgeContext(knowledge, roomId);
   const system = `タスクの実行工程を3〜5ステップで返してください。JSON配列のみ（マークダウン不要）。
 ["工程1の内容","工程2の内容","工程3の内容"]
-各工程は20文字以内の具体的アクション。動詞で終わる。順番通りに並べる。`;
+各工程は20文字以内の具体的アクション。動詞で終わる。順番通りに並べる。${ctx}`;
   const text = await callAI(model, system, `カテゴリ：${roomLabel}\nタスク：${taskText}`, 400);
   const arr = JSON.parse(text.replace(/```json|```/g, '').trim());
   return arr.map((t: string) => ({ text: t, done: false }));
 }
 
-export async function extractTasksFromMemo(model: AIModel, roomLabel: string, memo: string): Promise<Task[]> {
+export async function extractTasksFromMemo(model: AIModel, roomLabel: string, memo: string, knowledge?: Knowledge, roomId?: string): Promise<Task[]> {
+  const ctx = buildKnowledgeContext(knowledge, roomId);
   const system = `話された内容からやるべきことを何でも抽出してください。
 完全な文章でなくても、単語・断片的な内容でもタスクにする。
 「〜したい」「〜が気になる」「〜しないと」も全部タスクにする。
 JSON配列のみ返す（マークダウン不要）：
-[{"text":"タスク内容","priority":"URGENT|HIGH|MED|LOW","deadline":"今日|今週|今月|今年"}]`;
+[{"text":"タスク内容","priority":"URGENT|HIGH|MED|LOW","deadline":"今日|今週|今月|今年"}]${ctx}`;
   const text = await callAI(model, system, `カテゴリ：${roomLabel}\nメモ：\n${memo}`, 600);
   return JSON.parse(text.replace(/```json|```/g, '').trim());
 }
 
-export async function extractTasksFromImage(roomLabel: string, base64Data: string, mimeType: string): Promise<Task[]> {
+export async function extractTasksFromImage(roomLabel: string, base64Data: string, mimeType: string, knowledge?: Knowledge, roomId?: string): Promise<Task[]> {
+  const ctx = buildKnowledgeContext(knowledge, roomId);
   const system = `画像の内容を読み取り、やるべきことを何でも抽出してください。
 完全な文章でなくても、単語・断片的な内容でもタスクにする。
 「〜したい」「〜が気になる」「〜しないと」も全部タスクにする。
 画像にテキストが含まれていない場合や、タスク化できる内容がない場合は空配列[]を返す。
 JSON配列のみ返す（マークダウン不要）：
-[{"text":"タスク内容","priority":"URGENT|HIGH|MED|LOW","deadline":"今日|今週|今月|今年"}]`;
+[{"text":"タスク内容","priority":"URGENT|HIGH|MED|LOW","deadline":"今日|今週|今月|今年"}]${ctx}`;
   const text = await callGeminiVision(system, base64Data, mimeType);
   return JSON.parse(text.replace(/```json|```/g, '').trim());
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { RoomDef, Task, Step, Horizon, AIModel } from '@/lib/types';
+import { RoomDef, Task, Step, Horizon, AIModel, Knowledge } from '@/lib/types';
 import { HORIZON_FILTER } from '@/lib/constants';
 import TaskItem from './TaskItem';
 import MemoPanel from './MemoPanel';
@@ -18,6 +18,7 @@ interface RoomCardProps {
   steps: Record<string, Step[]>;
   newKeys: string[];
   aiModel: AIModel;
+  knowledge: Knowledge;
   onToggle: (key: string) => void;
   onDelete: (roomId: string, origIdx: number) => void;
   onSetSteps: (key: string, steps: Step[]) => void;
@@ -28,7 +29,7 @@ interface RoomCardProps {
 
 export default function RoomCard({
   room, digest, memo, tasks, horizon, highlight,
-  checked, steps, newKeys, aiModel,
+  checked, steps, newKeys, aiModel, knowledge,
   onToggle, onDelete, onSetSteps, onSaveMemo, onAppendMemo, onAddTasks,
 }: RoomCardProps) {
   const filterTasks = (ts: Task[]) => ts.filter(t => HORIZON_FILTER[horizon].includes(t.deadline));
@@ -72,6 +73,7 @@ export default function RoomCard({
           <VoiceInput
             room={room}
             aiModel={aiModel}
+            knowledge={knowledge}
             onAddTasks={(newTasks) => onAddTasks(room.id, newTasks)}
           />
           <div style={{ textAlign: 'right' }}>
@@ -120,6 +122,7 @@ export default function RoomCard({
                 done={!!checked[key]}
                 isNew={newKeys.includes(key)}
                 aiModel={aiModel}
+                knowledge={knowledge}
                 onToggle={() => onToggle(key)}
                 onDelete={() => onDelete(room.id, origIdx)}
                 steps={steps[key] || null}
@@ -138,6 +141,7 @@ export default function RoomCard({
         room={room}
         memo={memo}
         aiModel={aiModel}
+        knowledge={knowledge}
         onSave={(text) => onSaveMemo(room.id, text)}
         onAddTasks={(newTasks) => onAddTasks(room.id, newTasks)}
       />
@@ -145,6 +149,7 @@ export default function RoomCard({
         <FileUpload
           room={room}
           aiModel={aiModel}
+          knowledge={knowledge}
           onAddTasks={(newTasks) => onAddTasks(room.id, newTasks)}
           onAppendMemo={(text) => onAppendMemo(room.id, text)}
         />

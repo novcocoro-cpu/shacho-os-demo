@@ -28,3 +28,12 @@ export interface RoomDef {
   color: string;
   rgb: string;
 }
+
+export interface Knowledge {
+  company: string;
+  vision: string;
+  priority: string;
+  partners: string;
+  aiPrompt: string;
+  roomPolicies: Record<string, string>;
+}
