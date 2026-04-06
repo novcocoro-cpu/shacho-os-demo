@@ -53,7 +53,7 @@ async function callGemini(system: string, userContent: string): Promise<string> 
     console.error('NEXT_PUBLIC_GEMINI_API_KEY が設定されていません');
     throw new Error('Gemini APIキーが未設定です');
   }
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-001:generateContent?key=${apiKey}`;
   console.log('Gemini API URL:', url.replace(apiKey, apiKey.slice(0, 8) + '...'));
   const resp = await fetch(url, {
     method: 'POST',
@@ -82,7 +82,7 @@ async function callGemini(system: string, userContent: string): Promise<string> 
 async function callGeminiVision(system: string, base64Data: string, mimeType: string): Promise<string> {
   const apiKey = (process.env.NEXT_PUBLIC_GEMINI_API_KEY ?? '').trim();
   if (!apiKey) throw new Error('Gemini APIキーが未設定です');
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-001:generateContent?key=${apiKey}`;
   const resp = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
