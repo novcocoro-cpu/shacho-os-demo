@@ -1,11 +1,10 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { RoomDef, Task, AIModel, Knowledge } from '@/lib/types';
 import { extractTasksFromMemo } from '@/lib/ai';
 
 const MAX_RECORD_SEC = 60;
-const SILENCE_TIMEOUT_MS = 10000;
 
 interface MemoPanelProps {
   room: RoomDef;
@@ -26,11 +25,8 @@ export default function MemoPanel({ room, memo, aiModel, knowledge, onSave, onAd
   const [remainSec, setRemainSec] = useState(MAX_RECORD_SEC);
   const ref = useRef<HTMLTextAreaElement>(null);
   const recRef = useRef<SpeechRecognition | null>(null);
-  const silenceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const maxTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const memoFinalTranscript = useRef('');
-  const baseDraft = useRef('');
 
   const lines = memo ? memo.split('\n').filter(Boolean) : [];
   const preview = lines[0] || null;
@@ -45,22 +41,21 @@ export default function MemoPanel({ room, memo, aiModel, knowledge, onSave, onAd
     }
   }, [draft, editing]);
 
-  const stopVoice = useCallback(() => {
-    recRef.current?.stop();
-    setListen(false);
-    if (silenceTimer.current) { clearTimeout(silenceTimer.current); silenceTimer.current = null; }
+  const showToast = (msg: string) => {
+    setToast(msg);
+    setTimeout(() => setToast(''), 3000);
+  };
+
+  const cleanupTimers = () => {
     if (maxTimer.current) { clearTimeout(maxTimer.current); maxTimer.current = null; }
     if (countdownRef.current) { clearInterval(countdownRef.current); countdownRef.current = null; }
     setRemainSec(MAX_RECORD_SEC);
-  }, []);
+  };
 
-  const resetSilenceTimer = useCallback(() => {
-    if (silenceTimer.current) clearTimeout(silenceTimer.current);
-    silenceTimer.current = setTimeout(() => {
-      stopVoice();
-      showToast('無音のため自動停止しました');
-    }, SILENCE_TIMEOUT_MS);
-  }, [stopVoice]);
+  const stopVoice = () => {
+    recRef.current?.stop();
+    // onend will handle setListen(false) and cleanup
+  };
 
   const toggleVoice = () => {
     if (listening) {
@@ -69,45 +64,50 @@ export default function MemoPanel({ room, memo, aiModel, knowledge, onSave, onAd
     }
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) { alert('このブラウザは音声入力に対応していません'); return; }
-    const r = new SR();
-    r.lang = 'ja-JP';
-    r.continuous = true;
-    r.interimResults = true;
-    memoFinalTranscript.current = '';
-    baseDraft.current = draft;
 
-    r.onresult = (e: SpeechRecognitionEvent) => {
-      resetSilenceTimer();
-      let interim = '';
-      for (let i = e.resultIndex; i < e.results.length; i++) {
-        const transcript = e.results[i][0].transcript;
-        if (e.results[i].isFinal) {
-          memoFinalTranscript.current += transcript;
+    let finalText = '';
+    const baseDraft = draft;
+
+    const recognition = new SR();
+    recognition.lang = 'ja-JP';
+    recognition.continuous = true;
+    recognition.interimResults = true;
+
+    recognition.onresult = (event: SpeechRecognitionEvent) => {
+      let interimText = '';
+
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const transcript = event.results[i][0].transcript;
+        if (event.results[i].isFinal) {
+          finalText += transcript;
         } else {
-          interim = transcript;
+          interimText = transcript;
         }
       }
-      const base = baseDraft.current.trimEnd();
-      const voiceText = memoFinalTranscript.current + interim;
+
+      const base = baseDraft.trimEnd();
+      const voiceText = finalText + interimText;
       setDraft(base ? base + '\n' + voiceText : voiceText);
     };
 
-    r.onend = () => {
+    recognition.onerror = (e: Event) => {
+      console.error('音声認識エラー:', e);
       setListen(false);
-      if (silenceTimer.current) { clearTimeout(silenceTimer.current); silenceTimer.current = null; }
-      if (maxTimer.current) { clearTimeout(maxTimer.current); maxTimer.current = null; }
-      if (countdownRef.current) { clearInterval(countdownRef.current); countdownRef.current = null; }
-      setRemainSec(MAX_RECORD_SEC);
+      cleanupTimers();
     };
 
-    r.start();
-    recRef.current = r;
+    recognition.onend = () => {
+      const base = baseDraft.trimEnd();
+      setDraft(base ? base + '\n' + finalText : finalText);
+      setListen(false);
+      cleanupTimers();
+    };
+
+    recognition.start();
+    recRef.current = recognition;
     setListen(true);
 
-    // Start silence timer
-    resetSilenceTimer();
-
-    // Max recording time (60s)
+    // Max recording timer
     setRemainSec(MAX_RECORD_SEC);
     const startTime = Date.now();
     countdownRef.current = setInterval(() => {
@@ -115,13 +115,14 @@ export default function MemoPanel({ room, memo, aiModel, knowledge, onSave, onAd
       setRemainSec(Math.max(0, MAX_RECORD_SEC - elapsed));
     }, 1000);
     maxTimer.current = setTimeout(() => {
-      stopVoice();
+      recognition.stop();
       showToast('録音時間の上限（60秒）に達しました');
     }, MAX_RECORD_SEC * 1000);
   };
 
   const extractTasks = async () => {
     if (!draft.trim()) return;
+    console.log('AIに渡すテキスト:', draft);
     setAiLoad(true);
     try {
       const tasks = await extractTasksFromMemo(aiModel, room.label, draft, knowledge, room.id);
@@ -137,18 +138,11 @@ export default function MemoPanel({ room, memo, aiModel, knowledge, onSave, onAd
     setAiLoad(false);
   };
 
-  const showToast = (msg: string) => {
-    setToast(msg);
-    setTimeout(() => setToast(''), 3000);
-  };
-
   // Cleanup on unmount
   useEffect(() => {
     return () => {
       if (recRef.current) recRef.current.stop();
-      if (silenceTimer.current) clearTimeout(silenceTimer.current);
-      if (maxTimer.current) clearTimeout(maxTimer.current);
-      if (countdownRef.current) clearInterval(countdownRef.current);
+      cleanupTimers();
     };
   }, []);
 

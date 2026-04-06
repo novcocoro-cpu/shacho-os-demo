@@ -1,11 +1,10 @@
 'use client';
 
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { RoomDef, Task, AIModel, Knowledge } from '@/lib/types';
 import { extractTasksFromMemo } from '@/lib/ai';
 
 const MAX_RECORD_SEC = 60;
-const SILENCE_TIMEOUT_MS = 10000;
 
 interface VoiceInputProps {
   room: RoomDef;
@@ -21,24 +20,22 @@ export default function VoiceInput({ room, aiModel, knowledge, onAddTasks }: Voi
   const [toast, setToast] = useState('');
   const [displayText, setDisplayText] = useState('');
   const recRef = useRef<SpeechRecognition | null>(null);
-  const silenceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const maxTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const finalTranscript = useRef('');
+  const finalTextRef = useRef('');
 
   const showToast = (msg: string) => {
     setToast(msg);
     setTimeout(() => setToast(''), 3000);
   };
 
-  const cleanup = useCallback(() => {
-    if (silenceTimer.current) { clearTimeout(silenceTimer.current); silenceTimer.current = null; }
+  const cleanup = () => {
     if (maxTimer.current) { clearTimeout(maxTimer.current); maxTimer.current = null; }
     if (countdownRef.current) { clearInterval(countdownRef.current); countdownRef.current = null; }
     setRemainSec(MAX_RECORD_SEC);
-  }, []);
+  };
 
-  const processText = useCallback(async (text: string) => {
+  const processText = async (text: string) => {
     if (!text.trim()) {
       showToast('音声が認識されませんでした');
       return;
@@ -59,76 +56,72 @@ export default function VoiceInput({ room, aiModel, knowledge, onAddTasks }: Voi
     }
     setLoading(false);
     setDisplayText('');
-  }, [aiModel, room.label, room.id, knowledge, onAddTasks]);
+  };
 
-  const finishRecording = useCallback(() => {
+  const stopVoice = () => {
     recRef.current?.stop();
-    setListening(false);
-    cleanup();
-    const text = finalTranscript.current;
-    if (text.trim()) {
-      processText(text);
-    } else {
-      showToast('音声が認識されませんでした');
-      setDisplayText('');
-    }
-    finalTranscript.current = '';
-  }, [cleanup, processText]);
-
-  const resetSilenceTimer = useCallback(() => {
-    if (silenceTimer.current) clearTimeout(silenceTimer.current);
-    silenceTimer.current = setTimeout(finishRecording, SILENCE_TIMEOUT_MS);
-  }, [finishRecording]);
+    // onend will handle the rest
+  };
 
   const startVoice = () => {
     if (listening || loading) return;
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) { alert('このブラウザは音声入力に対応していません'); return; }
 
-    const r = new SR();
-    r.lang = 'ja-JP';
-    r.continuous = true;
-    r.interimResults = true;
-    finalTranscript.current = '';
-    setDisplayText('');
+    let finalText = '';
 
-    r.onresult = (e: SpeechRecognitionEvent) => {
-      resetSilenceTimer();
-      let interim = '';
-      for (let i = e.resultIndex; i < e.results.length; i++) {
-        const transcript = e.results[i][0].transcript;
-        if (e.results[i].isFinal) {
-          finalTranscript.current += transcript;
+    const recognition = new SR();
+    recognition.lang = 'ja-JP';
+    recognition.continuous = true;
+    recognition.interimResults = true;
+
+    recognition.onresult = (event: SpeechRecognitionEvent) => {
+      let interimText = '';
+
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const transcript = event.results[i][0].transcript;
+        if (event.results[i].isFinal) {
+          finalText += transcript;
         } else {
-          interim = transcript;
+          interimText = transcript;
         }
       }
-      setDisplayText(finalTranscript.current + interim);
+
+      finalTextRef.current = finalText;
+      setDisplayText(finalText + interimText);
     };
 
-    r.onend = () => {
+    recognition.onerror = (e: Event) => {
+      console.error('音声認識エラー:', e);
       setListening(false);
       cleanup();
-      const text = finalTranscript.current;
-      if (text.trim()) {
-        processText(text);
-      }
-      finalTranscript.current = '';
     };
 
-    r.start();
-    recRef.current = r;
+    recognition.onend = () => {
+      setDisplayText(finalText);
+      setListening(false);
+      cleanup();
+      if (finalText.trim()) {
+        processText(finalText);
+      }
+    };
+
+    recognition.start();
+    recRef.current = recognition;
+    finalTextRef.current = '';
+    setDisplayText('');
     setListening(true);
 
-    resetSilenceTimer();
-
+    // Max recording timer
     setRemainSec(MAX_RECORD_SEC);
     const startTime = Date.now();
     countdownRef.current = setInterval(() => {
       const elapsed = Math.floor((Date.now() - startTime) / 1000);
       setRemainSec(Math.max(0, MAX_RECORD_SEC - elapsed));
     }, 1000);
-    maxTimer.current = setTimeout(finishRecording, MAX_RECORD_SEC * 1000);
+    maxTimer.current = setTimeout(() => {
+      recognition.stop();
+    }, MAX_RECORD_SEC * 1000);
   };
 
   useEffect(() => {
@@ -136,7 +129,7 @@ export default function VoiceInput({ room, aiModel, knowledge, onAddTasks }: Voi
       if (recRef.current) recRef.current.stop();
       cleanup();
     };
-  }, [cleanup]);
+  }, []);
 
   return (
     <div style={{ position: 'relative' }}>
@@ -170,7 +163,7 @@ export default function VoiceInput({ room, aiModel, knowledge, onAddTasks }: Voi
 
       {listening && (
         <div>
-          <button onClick={finishRecording} style={{
+          <button onClick={stopVoice} style={{
             padding: '3px 8px', fontSize: 9,
             border: '1px solid rgba(224,123,106,0.5)',
             background: 'rgba(224,123,106,0.12)',
