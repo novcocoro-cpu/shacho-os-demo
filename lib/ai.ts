@@ -149,9 +149,10 @@ export async function generateSteps(model: AIModel, roomLabel: string, taskText:
 
 export async function extractTasksFromMemo(model: AIModel, roomLabel: string, memo: string, knowledge?: Knowledge, roomId?: string): Promise<Task[]> {
   const ctx = buildKnowledgeContext(knowledge, roomId);
-  const system = `話された内容からやるべきことを何でも抽出してください。
-完全な文章でなくても、単語・断片的な内容でもタスクにする。
-「〜したい」「〜が気になる」「〜しないと」も全部タスクにする。
+  const system = `以下の発言から、やるべきことを何でも抽出してください。
+断片的・口語的な内容でも必ずタスクにする。
+「〜したい」「〜が気になる」「〜しないと」も全部タスク化する。
+最低1件は必ず返す。本当に何もなければ「内容を確認する」をタスクにする。
 JSON配列のみ返す（マークダウン不要）：
 [{"text":"タスク内容","priority":"URGENT|HIGH|MED|LOW","deadline":"今日|今週|今月|今年"}]${ctx}`;
   const text = await callAI(model, system, `カテゴリ：${roomLabel}\nメモ：\n${memo}`, 600);

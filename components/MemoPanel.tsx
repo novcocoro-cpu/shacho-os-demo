@@ -29,7 +29,8 @@ export default function MemoPanel({ room, memo, aiModel, knowledge, onSave, onAd
   const silenceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const maxTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const lastTranscript = useRef('');
+  const memoFinalTranscript = useRef('');
+  const baseDraft = useRef('');
 
   const lines = memo ? memo.split('\n').filter(Boolean) : [];
   const preview = lines[0] || null;
@@ -72,37 +73,23 @@ export default function MemoPanel({ room, memo, aiModel, knowledge, onSave, onAd
     r.lang = 'ja-JP';
     r.continuous = true;
     r.interimResults = true;
-    lastTranscript.current = '';
+    memoFinalTranscript.current = '';
+    baseDraft.current = draft;
 
     r.onresult = (e: SpeechRecognitionEvent) => {
       resetSilenceTimer();
-      let finalText = '';
-      for (let i = 0; i < e.results.length; i++) {
+      let interim = '';
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const transcript = e.results[i][0].transcript;
         if (e.results[i].isFinal) {
-          finalText += e.results[i][0].transcript;
-        }
-      }
-      if (!finalText.trim()) return;
-      // 3回連続重複除去
-      const lines = finalText.split(/(?<=。|、|\n)/);
-      const deduped: string[] = [];
-      let repeatCount = 0;
-      for (const line of lines) {
-        if (deduped.length > 0 && line.trim() === deduped[deduped.length - 1].trim()) {
-          repeatCount++;
-          if (repeatCount < 3) deduped.push(line);
+          memoFinalTranscript.current += transcript;
         } else {
-          repeatCount = 0;
-          deduped.push(line);
+          interim = transcript;
         }
       }
-      const cleaned = deduped.join('');
-      if (cleaned.trim() === lastTranscript.current.trim()) return;
-      lastTranscript.current = cleaned;
-      setDraft(prev => {
-        const base = prev.trimEnd();
-        return base ? base + '\n' + cleaned : cleaned;
-      });
+      const base = baseDraft.current.trimEnd();
+      const voiceText = memoFinalTranscript.current + interim;
+      setDraft(base ? base + '\n' + voiceText : voiceText);
     };
 
     r.onend = () => {

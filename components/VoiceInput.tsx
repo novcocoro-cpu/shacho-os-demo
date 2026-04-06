@@ -7,22 +7,6 @@ import { extractTasksFromMemo } from '@/lib/ai';
 const MAX_RECORD_SEC = 60;
 const SILENCE_TIMEOUT_MS = 10000;
 
-function deduplicateText(text: string): string {
-  const lines = text.split('\n').filter(Boolean);
-  const result: string[] = [];
-  let repeatCount = 0;
-  for (const line of lines) {
-    if (result.length > 0 && line.trim() === result[result.length - 1].trim()) {
-      repeatCount++;
-      if (repeatCount < 3) result.push(line);
-    } else {
-      repeatCount = 0;
-      result.push(line);
-    }
-  }
-  return result.join('\n');
-}
-
 interface VoiceInputProps {
   room: RoomDef;
   aiModel: AIModel;
@@ -35,12 +19,12 @@ export default function VoiceInput({ room, aiModel, knowledge, onAddTasks }: Voi
   const [loading, setLoading] = useState(false);
   const [remainSec, setRemainSec] = useState(MAX_RECORD_SEC);
   const [toast, setToast] = useState('');
-  const [interim, setInterim] = useState('');
+  const [displayText, setDisplayText] = useState('');
   const recRef = useRef<SpeechRecognition | null>(null);
   const silenceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const maxTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const collectedText = useRef('');
+  const finalTranscript = useRef('');
 
   const showToast = (msg: string) => {
     setToast(msg);
@@ -52,35 +36,43 @@ export default function VoiceInput({ room, aiModel, knowledge, onAddTasks }: Voi
     if (maxTimer.current) { clearTimeout(maxTimer.current); maxTimer.current = null; }
     if (countdownRef.current) { clearInterval(countdownRef.current); countdownRef.current = null; }
     setRemainSec(MAX_RECORD_SEC);
-    setInterim('');
   }, []);
 
   const processText = useCallback(async (text: string) => {
-    const cleaned = deduplicateText(text);
-    if (!cleaned.trim()) return;
+    if (!text.trim()) {
+      showToast('音声が認識されませんでした');
+      return;
+    }
+    console.log('AIに渡すテキスト:', text);
     setLoading(true);
     try {
-      const tasks = await extractTasksFromMemo(aiModel, room.label, cleaned, knowledge, room.id);
+      const tasks = await extractTasksFromMemo(aiModel, room.label, text, knowledge, room.id);
       if (tasks.length > 0) {
         onAddTasks(tasks);
         showToast(`✓ タスクを${tasks.length}件追加しました`);
       } else {
         showToast('タスク化できる内容はありませんでした');
       }
-    } catch {
+    } catch (err) {
+      console.error('AI処理エラー:', err);
       showToast('エラーが発生しました');
     }
     setLoading(false);
-  }, [aiModel, room.label, onAddTasks]);
+    setDisplayText('');
+  }, [aiModel, room.label, room.id, knowledge, onAddTasks]);
 
   const finishRecording = useCallback(() => {
     recRef.current?.stop();
     setListening(false);
     cleanup();
-    if (collectedText.current.trim()) {
-      processText(collectedText.current);
-      collectedText.current = '';
+    const text = finalTranscript.current;
+    if (text.trim()) {
+      processText(text);
+    } else {
+      showToast('音声が認識されませんでした');
+      setDisplayText('');
     }
+    finalTranscript.current = '';
   }, [cleanup, processText]);
 
   const resetSilenceTimer = useCallback(() => {
@@ -97,33 +89,31 @@ export default function VoiceInput({ room, aiModel, knowledge, onAddTasks }: Voi
     r.lang = 'ja-JP';
     r.continuous = true;
     r.interimResults = true;
-    collectedText.current = '';
+    finalTranscript.current = '';
+    setDisplayText('');
 
     r.onresult = (e: SpeechRecognitionEvent) => {
       resetSilenceTimer();
-      let finalText = '';
-      let interimText = '';
-      for (let i = 0; i < e.results.length; i++) {
-        const result = e.results[i];
-        if (result.isFinal) {
-          finalText += result[0].transcript;
+      let interim = '';
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const transcript = e.results[i][0].transcript;
+        if (e.results[i].isFinal) {
+          finalTranscript.current += transcript;
         } else {
-          interimText += result[0].transcript;
+          interim = transcript;
         }
       }
-      if (finalText) {
-        collectedText.current = finalText;
-      }
-      setInterim(interimText);
+      setDisplayText(finalTranscript.current + interim);
     };
 
     r.onend = () => {
       setListening(false);
       cleanup();
-      if (collectedText.current.trim()) {
-        processText(collectedText.current);
-        collectedText.current = '';
+      const text = finalTranscript.current;
+      if (text.trim()) {
+        processText(text);
       }
+      finalTranscript.current = '';
     };
 
     r.start();
@@ -196,13 +186,13 @@ export default function VoiceInput({ room, aiModel, knowledge, onAddTasks }: Voi
             }} />
             {remainSec}秒 ■停止
           </button>
-          {interim && (
+          {displayText && (
             <div style={{
-              fontSize: 9, color: '#666', fontFamily: 'monospace',
-              marginTop: 3, fontStyle: 'italic',
-              maxHeight: 32, overflow: 'hidden',
+              fontSize: 9, color: '#888', fontFamily: 'monospace',
+              marginTop: 3, lineHeight: 1.5,
+              maxHeight: 48, overflow: 'hidden',
             }}>
-              {interim}
+              {displayText}
             </div>
           )}
         </div>
