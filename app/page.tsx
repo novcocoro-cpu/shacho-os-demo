@@ -66,6 +66,15 @@ export default function Home() {
       [roomId]: { ...p[roomId], tasks: [...newTasks, ...p[roomId].tasks] },
     }));
 
+  const appendMemo = (roomId: string, text: string) =>
+    setRooms(p => ({
+      ...p,
+      [roomId]: {
+        ...p[roomId],
+        memo: p[roomId].memo ? p[roomId].memo + '\n\n--- ファイルから読み込み ---\n' + text : text,
+      },
+    }));
+
   const setTaskSteps = (key: string, val: Step[]) =>
     setSteps(p => ({ ...p, [key]: val }));
 
@@ -166,6 +175,7 @@ export default function Home() {
             onDelete={deleteTask}
             onSetSteps={setTaskSteps}
             onSaveMemo={saveMemo}
+            onAppendMemo={appendMemo}
             onAddTasks={addTasks}
           />
         )}

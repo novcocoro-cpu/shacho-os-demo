@@ -4,6 +4,7 @@ import { RoomDef, Task, Step, Horizon, AIModel } from '@/lib/types';
 import { HORIZON_FILTER } from '@/lib/constants';
 import TaskItem from './TaskItem';
 import MemoPanel from './MemoPanel';
+import FileUpload from './FileUpload';
 
 interface RoomCardProps {
   room: RoomDef;
@@ -20,13 +21,14 @@ interface RoomCardProps {
   onDelete: (roomId: string, origIdx: number) => void;
   onSetSteps: (key: string, steps: Step[]) => void;
   onSaveMemo: (roomId: string, text: string) => void;
+  onAppendMemo: (roomId: string, text: string) => void;
   onAddTasks: (roomId: string, tasks: Task[]) => void;
 }
 
 export default function RoomCard({
   room, digest, memo, tasks, horizon, highlight,
   checked, steps, newKeys, aiModel,
-  onToggle, onDelete, onSetSteps, onSaveMemo, onAddTasks,
+  onToggle, onDelete, onSetSteps, onSaveMemo, onAppendMemo, onAddTasks,
 }: RoomCardProps) {
   const filterTasks = (ts: Task[]) => ts.filter(t => HORIZON_FILTER[horizon].includes(t.deadline));
   const vis = filterTasks(tasks);
@@ -123,7 +125,7 @@ export default function RoomCard({
         )}
       </div>
 
-      {/* Memo */}
+      {/* Memo + File Upload */}
       <MemoPanel
         room={room}
         memo={memo}
@@ -131,6 +133,14 @@ export default function RoomCard({
         onSave={(text) => onSaveMemo(room.id, text)}
         onAddTasks={(newTasks) => onAddTasks(room.id, newTasks)}
       />
+      <div style={{ marginTop: 8 }}>
+        <FileUpload
+          room={room}
+          aiModel={aiModel}
+          onAddTasks={(newTasks) => onAddTasks(room.id, newTasks)}
+          onAppendMemo={(text) => onAppendMemo(room.id, text)}
+        />
+      </div>
     </div>
   );
 }

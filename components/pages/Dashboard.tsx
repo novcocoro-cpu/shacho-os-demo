@@ -18,12 +18,13 @@ interface DashboardProps {
   onDelete: (roomId: string, origIdx: number) => void;
   onSetSteps: (key: string, steps: Step[]) => void;
   onSaveMemo: (roomId: string, text: string) => void;
+  onAppendMemo: (roomId: string, text: string) => void;
   onAddTasks: (roomId: string, tasks: Task[]) => void;
 }
 
 export default function Dashboard({
   horizon, setHorizon, rooms, checked, steps, newKeys, highlight, insight, aiModel,
-  onToggle, onDelete, onSetSteps, onSaveMemo, onAddTasks,
+  onToggle, onDelete, onSetSteps, onSaveMemo, onAppendMemo, onAddTasks,
 }: DashboardProps) {
   const filterTasks = (tasks: Task[]) =>
     tasks.filter(t => HORIZON_FILTER[horizon].includes(t.deadline));
@@ -131,6 +132,7 @@ export default function Dashboard({
             onDelete={onDelete}
             onSetSteps={onSetSteps}
             onSaveMemo={onSaveMemo}
+            onAppendMemo={onAppendMemo}
             onAddTasks={onAddTasks}
           />
         ))}
