@@ -21,7 +21,7 @@ async function callClaude(system: string, userContent: string, maxTokens: number
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'x-api-key': process.env.NEXT_PUBLIC_ANTHROPIC_API_KEY!,
+      'x-api-key': (process.env.NEXT_PUBLIC_ANTHROPIC_API_KEY ?? '').trim(),
       'anthropic-version': '2023-06-01',
       'anthropic-dangerous-direct-browser-access': 'true',
     },
@@ -38,7 +38,7 @@ async function callClaude(system: string, userContent: string, maxTokens: number
 
 // ── Gemini API ──────────────────────────────────────────────────────────────
 async function callGemini(system: string, userContent: string): Promise<string> {
-  const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY!;
+  const apiKey = (process.env.NEXT_PUBLIC_GEMINI_API_KEY ?? '').trim();
   const resp = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
     {
@@ -56,7 +56,7 @@ async function callGemini(system: string, userContent: string): Promise<string> 
 
 // ── Gemini Vision API（画像読み取り）─────────────────────────────────────────
 async function callGeminiVision(system: string, base64Data: string, mimeType: string): Promise<string> {
-  const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY!;
+  const apiKey = (process.env.NEXT_PUBLIC_GEMINI_API_KEY ?? '').trim();
   const resp = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
     {
