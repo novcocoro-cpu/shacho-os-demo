@@ -1,8 +1,11 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { RoomDef, Task, AIModel } from '@/lib/types';
 import { extractTasksFromMemo } from '@/lib/ai';
+
+const MAX_RECORD_SEC = 60;
+const SILENCE_TIMEOUT_MS = 3000;
 
 interface MemoPanelProps {
   room: RoomDef;
@@ -19,8 +22,13 @@ export default function MemoPanel({ room, memo, aiModel, onSave, onAddTasks }: M
   const [listening, setListen] = useState(false);
   const [aiLoading, setAiLoad] = useState(false);
   const [toast, setToast] = useState('');
+  const [remainSec, setRemainSec] = useState(MAX_RECORD_SEC);
   const ref = useRef<HTMLTextAreaElement>(null);
   const recRef = useRef<SpeechRecognition | null>(null);
+  const silenceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const maxTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const lastTranscript = useRef('');
 
   const lines = memo ? memo.split('\n').filter(Boolean) : [];
   const preview = lines[0] || null;
@@ -35,10 +43,26 @@ export default function MemoPanel({ room, memo, aiModel, onSave, onAddTasks }: M
     }
   }, [draft, editing]);
 
+  const stopVoice = useCallback(() => {
+    recRef.current?.stop();
+    setListen(false);
+    if (silenceTimer.current) { clearTimeout(silenceTimer.current); silenceTimer.current = null; }
+    if (maxTimer.current) { clearTimeout(maxTimer.current); maxTimer.current = null; }
+    if (countdownRef.current) { clearInterval(countdownRef.current); countdownRef.current = null; }
+    setRemainSec(MAX_RECORD_SEC);
+  }, []);
+
+  const resetSilenceTimer = useCallback(() => {
+    if (silenceTimer.current) clearTimeout(silenceTimer.current);
+    silenceTimer.current = setTimeout(() => {
+      stopVoice();
+      showToast('無音のため自動停止しました');
+    }, SILENCE_TIMEOUT_MS);
+  }, [stopVoice]);
+
   const toggleVoice = () => {
     if (listening) {
-      recRef.current?.stop();
-      setListen(false);
+      stopVoice();
       return;
     }
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -46,15 +70,51 @@ export default function MemoPanel({ room, memo, aiModel, onSave, onAddTasks }: M
     const r = new SR();
     r.lang = 'ja-JP';
     r.continuous = true;
-    r.interimResults = true;
+    r.interimResults = false;
+    lastTranscript.current = '';
+
     r.onresult = (e: SpeechRecognitionEvent) => {
-      const t = Array.from(e.results).map(x => x[0].transcript).join('');
-      setDraft(prev => { const b = prev.trimEnd(); return b ? b + '\n' + t : t; });
+      resetSilenceTimer();
+      const latest = Array.from(e.results)
+        .filter(res => res.isFinal)
+        .map(res => res[0].transcript)
+        .join('');
+      if (!latest.trim()) return;
+      // Deduplicate: skip if same as last transcript
+      if (latest.trim() === lastTranscript.current.trim()) return;
+      lastTranscript.current = latest;
+      setDraft(prev => {
+        const base = prev.trimEnd();
+        return base ? base + '\n' + latest : latest;
+      });
     };
-    r.onend = () => setListen(false);
+
+    r.onend = () => {
+      setListen(false);
+      if (silenceTimer.current) { clearTimeout(silenceTimer.current); silenceTimer.current = null; }
+      if (maxTimer.current) { clearTimeout(maxTimer.current); maxTimer.current = null; }
+      if (countdownRef.current) { clearInterval(countdownRef.current); countdownRef.current = null; }
+      setRemainSec(MAX_RECORD_SEC);
+    };
+
     r.start();
     recRef.current = r;
     setListen(true);
+
+    // Start silence timer
+    resetSilenceTimer();
+
+    // Max recording time (60s)
+    setRemainSec(MAX_RECORD_SEC);
+    const startTime = Date.now();
+    countdownRef.current = setInterval(() => {
+      const elapsed = Math.floor((Date.now() - startTime) / 1000);
+      setRemainSec(Math.max(0, MAX_RECORD_SEC - elapsed));
+    }, 1000);
+    maxTimer.current = setTimeout(() => {
+      stopVoice();
+      showToast('録音時間の上限（60秒）に達しました');
+    }, MAX_RECORD_SEC * 1000);
   };
 
   const extractTasks = async () => {
@@ -78,6 +138,16 @@ export default function MemoPanel({ room, memo, aiModel, onSave, onAddTasks }: M
     setToast(msg);
     setTimeout(() => setToast(''), 3000);
   };
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (recRef.current) recRef.current.stop();
+      if (silenceTimer.current) clearTimeout(silenceTimer.current);
+      if (maxTimer.current) clearTimeout(maxTimer.current);
+      if (countdownRef.current) clearInterval(countdownRef.current);
+    };
+  }, []);
 
   return (
     <div style={{
@@ -131,13 +201,13 @@ export default function MemoPanel({ room, memo, aiModel, onSave, onAddTasks }: M
           </button>
         )}
 
-        {open && editing && (
+        {open && editing && !listening && (
           <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
             <button onClick={toggleVoice} style={{
               width: 24, height: 24, borderRadius: '50%',
-              border: `1px solid ${listening ? '#E07B6A' : `rgba(${room.rgb},0.4)`}`,
-              background: listening ? 'rgba(224,123,106,0.15)' : 'transparent',
-              color: listening ? '#E07B6A' : room.color, cursor: 'pointer', fontSize: 11,
+              border: `1px solid rgba(${room.rgb},0.4)`,
+              background: 'transparent',
+              color: room.color, cursor: 'pointer', fontSize: 11,
               display: 'flex', alignItems: 'center', justifyContent: 'center',
             }}>
               ♪
@@ -166,17 +236,27 @@ export default function MemoPanel({ room, memo, aiModel, onSave, onAddTasks }: M
             <>
               {listening && (
                 <div style={{
-                  display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6,
-                  padding: '4px 8px', background: 'rgba(224,123,106,0.08)',
-                  border: '1px solid rgba(224,123,106,0.2)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  marginBottom: 6, padding: '6px 10px',
+                  background: 'rgba(224,123,106,0.1)',
+                  border: '1px solid rgba(224,123,106,0.3)',
                 }}>
-                  <div style={{
-                    width: 6, height: 6, borderRadius: '50%',
-                    background: '#E07B6A', animation: 'blink 0.8s infinite',
-                  }} />
-                  <span style={{ fontSize: 10, color: '#E07B6A', fontFamily: 'monospace' }}>
-                    録音中... もう一度タップで停止
-                  </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <div style={{
+                      width: 8, height: 8, borderRadius: '50%',
+                      background: '#E07B6A', animation: 'blink 0.8s infinite',
+                    }} />
+                    <span style={{ fontSize: 10, color: '#E07B6A', fontFamily: 'monospace' }}>
+                      録音中　残り {remainSec}秒
+                    </span>
+                  </div>
+                  <button onClick={stopVoice} style={{
+                    padding: '4px 14px', fontSize: 11, fontWeight: 700,
+                    background: '#E07B6A', border: 'none', color: '#080A0D',
+                    cursor: 'pointer',
+                  }}>
+                    ■ 停止
+                  </button>
                 </div>
               )}
               <textarea
